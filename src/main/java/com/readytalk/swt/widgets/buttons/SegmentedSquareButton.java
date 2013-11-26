@@ -17,13 +17,13 @@ import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
-import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.TypedListener;
 import org.eclipse.swt.SWT;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.logging.Logger;
 
@@ -69,28 +69,27 @@ import java.util.logging.Logger;
  *
  */
 
-public class SquareButton extends Canvas {
+public class SegmentedSquareButton extends SquareButton {
   protected static final Logger log = Logger.getLogger(SquareButton.class.getName());
 
+  protected ArrayList<SegmentedSquareButtonItem> items = new ArrayList<SegmentedSquareButtonItem>();
+
   protected Listener keyListener;
-  protected Image image, backgroundImage;
-  protected String text;
-  protected Font font;
-  protected Color fontColor, hoverFontColor, clickedFontColor, inactiveFontColor, selectedFontColor;
-  protected Color borderColor, hoverBorderColor, clickedBorderColor, inactiveBorderColor, selectedBorderColor;
-  protected Color currentColor, currentColor2, currentFontColor, currentBorderColor;
-  protected Color backgroundColor, backgroundColor2;
-  protected Color clickedColor, clickedColor2;
-  protected Color hoverColor, hoverColor2;
-  protected Color inactiveColor, inactiveColor2;
-  protected Color selectedColor, selectedColor2;
+  protected Font defaultFont;
+  protected Color defaultFontColor, defaultHoverFontColor, defaultClickedFontColor, defaultInactiveFontColor, defaultSelectedFontColor;
+  protected Color defaultBorderColor, defaultHoverBorderColor, defaultClickedBorderColor, defaultInactiveBorderColor, defaultSelectedBorderColor;
+  protected Color defaultCurrentColor, defaultCurrentColor2, defaultCurrentFontColor, defaultCurrentBorderColor;
+  protected Color defaultBackgroundColor, defaultBackgroundColor2;
+  protected Color defaultClickedColor, defaultClickedColor2;
+  protected Color defaultHoverColor, defaultHoverColor2;
+  protected Color defaultInactiveColor, defaultInactiveColor2;
+  protected Color defaultSelectedColor, defaultSelectedColor2;
   protected int innerMarginWidth = 8;
   protected int innerMarginHeight = 4;
   protected int borderWidth = 1;
   protected int imagePadding = 5; //5;
   protected boolean roundedCorners = true;
   protected int cornerRadius = 5;
-  protected boolean isFocused = false;
   protected boolean selectionBorder = false;
 
   protected int lastWidth, lastHeight;
@@ -103,22 +102,23 @@ public class SquareButton extends Canvas {
 
   public enum ImagePosition {
     ABOVE_TEXT,
+    BELOW_TEXT,
     RIGHT_OF_TEXT,
     LEFT_OF_TEXT
   }
-  protected ImagePosition imagePosition = ImagePosition.LEFT_OF_TEXT;
-
-  protected boolean horizontallyCenterContents = false;
-  protected boolean verticallyCenterContents = true;
 
   protected HashMap<String, Color> colorRegistry = new HashMap<String, Color>();
 
-  protected SquareButton(Composite parent, int style) {
+  protected SegmentedSquareButton(Composite parent, int style, SegmentedSquareButtonItem ... items) {
     super(parent, style | SWT.NO_BACKGROUND);
     this.setBackgroundMode(SWT.INHERIT_DEFAULT);
 
     setDefaultColors();
     addListeners();
+
+    for(SegmentedSquareButtonItem item : items) {
+      this.items.add(item);
+    }
   }
 
 
@@ -130,22 +130,22 @@ public class SquareButton extends Canvas {
   protected void addListeners() {
     addDisposeListener(new DisposeListener() {
       public void widgetDisposed(DisposeEvent e) {
-        SquareButton.this.widgetDisposed(e);
+        SegmentedSquareButton.this.widgetDisposed(e);
       }
     });
 
     addPaintListener(new PaintListener() {
       public void paintControl(PaintEvent e) {
-        SquareButton.this.paintControl(e);
+        SegmentedSquareButton.this.paintControl(e);
       }
     });
 
-    // MOUSE EVENTS
+    // MOUSE EVENTS will mostly apply to segments
     addMouseListener(new MouseAdapter() {
       @Override
       public void mouseDown(MouseEvent mouseEvent) {
         if (mouseEvent.button == 1) {
-          SquareButton.this.setClickedColor();
+          SegmentedSquareButton.this.setClickedColor();
         }
         super.mouseDown(mouseEvent);
       }
@@ -153,9 +153,9 @@ public class SquareButton extends Canvas {
       @Override
       public void mouseUp(MouseEvent mouseEvent) {
         if (mouseEvent.button == 1) {
-          SquareButton.this.setHoverColor();
-          if ((mouseEvent.count == 1) && getEnabled() && (getClientArea().contains(mouseEvent.x, mouseEvent.y))) {
-            doButtonClicked();
+          SegmentedSquareButtonItem item = findItem(mouseEvent.x, mouseEvent.y);
+          if ((mouseEvent.count == 1) && getEnabled() && (item != null)) {
+            item.mouseUpEventRecieved();
           }
         }
         super.mouseUp(mouseEvent);
@@ -165,22 +165,29 @@ public class SquareButton extends Canvas {
     addMouseTrackListener(new MouseTrackAdapter() {
       @Override
       public void mouseEnter(MouseEvent mouseEvent) {
-        SquareButton.this.setHoverColor();
+        SegmentedSquareButtonItem item = findItem(mouseEvent.x, mouseEvent.y);
+        if(item != null) {
+          item.mouseEnterEventRecieved();
+        }
         super.mouseEnter(mouseEvent);
       }
 
       @Override
       public void mouseExit(MouseEvent mouseEvent) {
-        if (isFocused)
-          SquareButton.this.setSelectedColor();
-        else
-          SquareButton.this.setNormalColor();
+        SegmentedSquareButtonItem item = findItem(mouseEvent.x, mouseEvent.y);
+        if(item != null) {
+          item.mouseExitEventRecieved();
+        }
+
         super.mouseExit(mouseEvent);
       }
 
       @Override
       public void mouseHover(MouseEvent mouseEvent) {
-        SquareButton.this.setHoverColor();
+        SegmentedSquareButtonItem item = findItem(mouseEvent.x, mouseEvent.y);
+        if(item != null) {
+          item.mouseHoverEventRecieved();
+        }
         super.mouseHover(mouseEvent);
       }
     });
@@ -204,39 +211,52 @@ public class SquareButton extends Canvas {
     });
     addListener(SWT.FocusIn, new Listener () {
       public void handleEvent (Event e) {
-        isFocused = true;
-        SquareButton.this.setSelectedColor();
-        redraw();
+        SegmentedSquareButtonItem item = findItem(e.x, e.y);
+        if(item != null) {
+          item.isFocused = true;
+          item.setSelectedColor();
+          redraw();
+        }
       }
     });
     addListener(SWT.FocusOut, new Listener () {
       public void handleEvent (Event e) {
-        isFocused = false;
-        SquareButton.this.setNormalColor();
-        redraw();
+        SegmentedSquareButtonItem item = findItem(e.x, e.y);
+        if(item != null) {
+          item.isFocused = false;
+          item.setNormalColor();
+          redraw();
+        }
       }
     });
 
     addListener(SWT.KeyUp, new Listener () {
       public void handleEvent (Event e) {
-        isFocused = true;
-        SquareButton.this.setSelectedColor();
-        redraw();
+        SegmentedSquareButtonItem item = findItem(e.x, e.y);
+        if(item != null) {
+          item.isFocused = true;
+          item.setSelectedColor();
+          redraw();
+        }
       }
     });
     keyListener = new Listener() {
       public void handleEvent(Event e) {
         // required for tab traversal to work
-        switch (e.character) {
-          case ' ':
-          case '\r':
-          case '\n':
-            SquareButton.this.setClickedColor();
-            redraw();
-            doButtonClicked();
-            break;
-          default:
-            break;
+        SegmentedSquareButtonItem item = findItem(e.x, e.y);
+        if(item != null) {
+
+          switch (e.character) {
+            case ' ':
+            case '\r':
+            case '\n':
+              item.setClickedColor();
+              redraw();
+              doButtonClicked();
+              break;
+            default:
+              break;
+          }
         }
       }
     };
@@ -278,26 +298,26 @@ public class SquareButton extends Canvas {
 
 
   protected void setDefaultColors() {
-    fontColor = getSavedColor(0, 0, 0);
-    hoverFontColor = getSavedColor(0, 0, 0);
-    clickedFontColor = getSavedColor(255, 255, 255);
-    inactiveFontColor = getSavedColor(187, 187, 187);
-    selectedFontColor = getSavedColor(160, 107, 38);
-    borderColor = getSavedColor(187, 187, 187);
-    hoverBorderColor = getSavedColor(147, 147, 147);
-    clickedBorderColor = getSavedColor(147, 147, 147);
-    inactiveBorderColor = getSavedColor(200, 200, 200);
-    selectedBorderColor = getSavedColor(160, 107, 38);
-    backgroundColor = getSavedColor(248, 248, 248);
-    backgroundColor2 = getSavedColor(228, 228, 228);
-    clickedColor = getSavedColor(120, 120, 120);
-    clickedColor2 = getSavedColor(150, 150, 150);
-    hoverColor = getSavedColor(248, 248, 248);
-    hoverColor2 = getSavedColor(228, 228, 228);
-    inactiveColor = getSavedColor(248, 248, 248);
-    inactiveColor2 = getSavedColor(228, 228, 228);
-    selectedColor = getSavedColor(238, 238, 238);
-    selectedColor2 = getSavedColor(218, 218, 218);
+    defaultFontColor = getSavedColor(0, 0, 0);
+    defaultHoverFontColor = getSavedColor(0, 0, 0);
+    defaultClickedFontColor = getSavedColor(255, 255, 255);
+    defaultInactiveFontColor = getSavedColor(187, 187, 187);
+    defaultSelectedFontColor = getSavedColor(160, 107, 38);
+    defaultBorderColor = getSavedColor(187, 187, 187);
+    defaultHoverBorderColor = getSavedColor(147, 147, 147);
+    defaultClickedBorderColor = getSavedColor(147, 147, 147);
+    defaultInactiveBorderColor = getSavedColor(200, 200, 200);
+    defaultSelectedBorderColor = getSavedColor(160, 107, 38);
+    defaultBackgroundColor = getSavedColor(248, 248, 248);
+    defaultBackgroundColor2 = getSavedColor(228, 228, 228);
+    defaultClickedColor = getSavedColor(120, 120, 120);
+    defaultClickedColor2 = getSavedColor(150, 150, 150);
+    defaultHoverColor = getSavedColor(248, 248, 248);
+    defaultHoverColor2 = getSavedColor(228, 228, 228);
+    defaultInactiveColor = getSavedColor(248, 248, 248);
+    defaultInactiveColor2 = getSavedColor(228, 228, 228);
+    defaultSelectedColor = getSavedColor(238, 238, 238);
+    defaultSelectedColor2 = getSavedColor(218, 218, 218);
   }
 
 
@@ -309,59 +329,18 @@ public class SquareButton extends Canvas {
     return colorRegistry.get(colorString);
   }
 
-  protected void setNormalColor() {
-    setMouseEventColor(backgroundColor, backgroundColor2, borderColor, fontColor);
-  }
-  protected void setHoverColor() {
-    setMouseEventColor(hoverColor, hoverColor2, hoverBorderColor, hoverFontColor);
-  }
-  protected void setClickedColor() {
-    setMouseEventColor(clickedColor, clickedColor2, clickedBorderColor, clickedFontColor);
-  }
-  protected void setInactiveColor() {
-    setMouseEventColor(inactiveColor, inactiveColor2, inactiveBorderColor, inactiveFontColor);
-  }
-  protected void setSelectedColor() {
-    setMouseEventColor(selectedColor, selectedColor2, selectedBorderColor, selectedFontColor);
-  }
-  protected void setMouseEventColor(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-    if (!getEnabled())
-      return;
 
-    if (currentColor == null) {
-      currentColor = backgroundColor;
-      currentColor2 = backgroundColor2;
-      currentBorderColor = borderColor;
-      currentFontColor = fontColor;
-    }
+  protected void paintSegment(SegmentedSquareButtonItem item) {
 
-    boolean redrawFlag = false;
-    if ((topBackgroundColor != null) && (!currentColor.equals(topBackgroundColor) ||
-            !currentColor2.equals(bottomBackgroundColor))) {
-      currentColor = currentColor2 = topBackgroundColor;
-      if (bottomBackgroundColor != null) {
-        currentColor2 = bottomBackgroundColor;
-      }
-      redrawFlag = true;
-    }
-    if ((borderColor != null) && (!currentBorderColor.equals(borderColor))) {
-      currentBorderColor = borderColor;
-      redrawFlag = true;
-    }
-    if ((fontColor != null) && (!currentFontColor.equals(fontColor))) {
-      currentFontColor = fontColor;
-      redrawFlag = true;
-    }
-    if (redrawFlag) { redraw(); }
   }
 
 
   protected void paintControl(PaintEvent paintEvent) {
-    if (currentColor == null) {
-      currentColor = backgroundColor;
-      currentColor2 = backgroundColor2;
-      currentBorderColor = borderColor;
-      currentFontColor = fontColor;
+    if (defaultCurrentColor == null) {
+      defaultCurrentColor = defaultBackgroundColor;
+      defaultCurrentColor2 = defaultBackgroundColor2;
+      defaultCurrentBorderColor = defaultBorderColor;
+      defaultCurrentFontColor = defaultFontColor;
     }
 
     Point buttonSize = computeSize();
@@ -396,11 +375,11 @@ public class SquareButton extends Canvas {
     // thing as a rounded gradient rectangle in SWT, so we need to draw a filled
     // rectangle that's just the right size to fit inside a rounded rectangle
     // without spilling out at the corners
-    gc.setForeground(this.currentColor);
-    gc.setBackground(this.currentColor2);
+    gc.setForeground(this.defaultCurrentColor);
+    gc.setBackground(this.defaultCurrentColor2);
 
     Rectangle fillRectangle = (roundedCorners) ? new Rectangle(buttonRectangle.x + 1, buttonRectangle.y + 1, buttonRectangle.width - 2, buttonRectangle.height - 3) :
-            new Rectangle(buttonRectangle.x + 1, buttonRectangle.y + 1, buttonRectangle.width - 1, buttonRectangle.height - 1);
+      new Rectangle(buttonRectangle.x + 1, buttonRectangle.y + 1, buttonRectangle.width - 1, buttonRectangle.height - 1);
 
     gc.fillGradientRectangle(fillRectangle.x, fillRectangle.y, fillRectangle.width, fillRectangle.height, true);
 
@@ -420,7 +399,7 @@ public class SquareButton extends Canvas {
     int bw = borderWidth;
     if (borderWidth > 0) {
       gc.setLineWidth(borderWidth);
-      gc.setForeground(this.currentBorderColor);
+      gc.setForeground(this.defaultCurrentBorderColor);
     } else {
       bw = 1;
       gc.setLineWidth(1);
@@ -435,7 +414,7 @@ public class SquareButton extends Canvas {
 
     // dotted line selection border around the text, if any
     if (this.isFocused && this.selectionBorder) {
-      gc.setForeground(currentFontColor);
+      gc.setForeground(defaultCurrentFontColor);
       gc.setLineStyle(SWT.LINE_DASH);
       gc.setLineWidth(1);
       gc.drawRectangle(buttonRectangle.x + (bw + 1), buttonRectangle.y + (bw + 1), buttonRectangle.width - (bw + 5), buttonRectangle.height - (bw + 5));
@@ -478,11 +457,11 @@ public class SquareButton extends Canvas {
    *  widthOfContents = Math.max(image.width, text.width)
    * @return
    */
-  protected int getWidthOfContents() {
+  protected int getWidthOfContents(SegmentedSquareButtonItem item) {
     int widthOfContents = 0;
 
-    Point textSize = computeTextSize();
-    Point imageSize = computeImageSize();
+    Point textSize = computeTextSize(item);
+    Point imageSize = computeImageSize(item);
 
     int textWidth = (textSize != null) ? textSize.x : 0;
     int imageWidth = (imageSize != null) ? imageSize.x : 0;
@@ -507,7 +486,7 @@ public class SquareButton extends Canvas {
    *  heightOfContents = imageHeight + imagePadding + textHeight
    * @return
    */
-  protected int getHeightOfContents() {
+  protected int getHeightOfContents(SegmentedSquareButtonItem item) {
     int heightOfContents = 0;
 
     Point textSize = computeTextSize();
@@ -695,8 +674,8 @@ public class SquareButton extends Canvas {
   }
 
   protected void drawText(GC gc, int x, int y) {
-    gc.setFont(font);
-    gc.setForeground(currentFontColor);
+    gc.setFont(defaultFont);
+    gc.setForeground(defaultCurrentFontColor);
     gc.drawText(text, x, y, SWT.DRAW_TRANSPARENT | SWT.DRAW_DELIMITER);
   }
 
@@ -759,14 +738,14 @@ public class SquareButton extends Canvas {
     return 0;
   }
 
-  public Point computeSize() {
-    return computeSize(SWT.DEFAULT, SWT.DEFAULT, false);
+  public Point computeSegmentSize(SegmentedSquareButtonItem item) {
+    return computeSize(item, SWT.DEFAULT, SWT.DEFAULT, false);
   }
 
-  public Point computeSize(int widthHint, int heightHint, boolean changed) {
+  public Point computeSegmentSize(SegmentedSquareButtonItem item, int widthHint, int heightHint, boolean changed) {
     Point size = null;
     if ((widthHint == SWT.DEFAULT) && (heightHint == SWT.DEFAULT) && !changed &&
-            (lastWidth > 0) && (lastHeight > 0)) {
+      (lastWidth > 0) && (lastHeight > 0)) {
       size = new Point(lastWidth, lastHeight);
     } else {
       int width = (widthHint != SWT.DEFAULT) ? widthHint : getWidthOfContents() + (innerMarginWidth * 2);
@@ -788,20 +767,20 @@ public class SquareButton extends Canvas {
     return size;
   }
 
-  public Point computeTextSize() {
+  public Point computeTextSize(SegmentedSquareButtonItem item) {
     Point size = null;
-    if (text != null) {
+    if (item.getText() != null) {
       GC gc = new GC(this);
-      gc.setFont(font);
+      gc.setFont(defaultFont);
       size = gc.textExtent(text, SWT.DRAW_DELIMITER);
       gc.dispose();
     }
     return size;
   }
 
-  public Point computeImageSize() {
+  public Point computeImageSize(SegmentedSquareButtonItem item) {
     Point size = null;
-    if(image != null) {
+    if(item.getImage() != null) {
       Rectangle imageBounds = image.getBounds();
       size = new Point(imageBounds.width, imageBounds.height);
     }
@@ -823,14 +802,6 @@ public class SquareButton extends Canvas {
   }
   public Image getImage() {
     return image;
-  }
-
-  public ImagePosition getImagePosition() {
-    return imagePosition;
-  }
-
-  public void setImagePosition(ImagePosition imagePosition) {
-    this.imagePosition = imagePosition;
   }
 
   public int getImagePadding() {
@@ -894,11 +865,11 @@ public class SquareButton extends Canvas {
     redraw();
   }
   public Font getFont() {
-    return font;
+    return defaultFont;
   }
   public void setFont(Font font) {
     if (font != null)
-      this.font = font;
+      this.defaultFont = font;
   }
 
   public boolean isHorizontallyCenterContents() {
@@ -1028,17 +999,17 @@ public class SquareButton extends Canvas {
    * @param fontColor the color of the defaultFont inside the button
    */
   public void setDefaultColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-    if (topBackgroundColor != null) { this.backgroundColor = topBackgroundColor; }
-    if (bottomBackgroundColor != null) { this.backgroundColor2 = bottomBackgroundColor; }
-    if (borderColor != null) { this.borderColor = borderColor; }
-    if (fontColor != null) { this.fontColor = fontColor; }
+    if (topBackgroundColor != null) { this.defaultBackgroundColor = topBackgroundColor; }
+    if (bottomBackgroundColor != null) { this.defaultBackgroundColor2 = bottomBackgroundColor; }
+    if (borderColor != null) { this.defaultBorderColor = borderColor; }
+    if (fontColor != null) { this.defaultFontColor = fontColor; }
   }
 
   public void setDefaultColors(SquareButtonColorGroup squareButtonColorGroup) {
     setSelectedColors(squareButtonColorGroup.getTopBackgroundColor(),
-            squareButtonColorGroup.getBottomBackgroundColor(),
-            squareButtonColorGroup.getBorderColor(),
-            squareButtonColorGroup.getFontColor());
+      squareButtonColorGroup.getBottomBackgroundColor(),
+      squareButtonColorGroup.getBorderColor(),
+      squareButtonColorGroup.getFontColor());
   }
 
   /**
@@ -1049,18 +1020,18 @@ public class SquareButton extends Canvas {
    * @param borderColor the color of the border around the button (if you don't want a border, use getBackground())
    * @param fontColor the color of the defaultFont inside the button
    */
-  public void setHoverColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-    if (topBackgroundColor != null) { this.hoverColor = topBackgroundColor; }
-    if (bottomBackgroundColor != null) { this.hoverColor2 = bottomBackgroundColor; }
-    if (borderColor != null) { this.hoverBorderColor = borderColor; }
-    if (fontColor != null) { this.hoverFontColor = fontColor; }
+  public void setDefaultHoverColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
+    if (topBackgroundColor != null) { this.defaultHoverColor = topBackgroundColor; }
+    if (bottomBackgroundColor != null) { this.defaultHoverColor2 = bottomBackgroundColor; }
+    if (borderColor != null) { this.defaultHoverBorderColor = borderColor; }
+    if (fontColor != null) { this.defaultHoverFontColor = fontColor; }
   }
 
-  public void setHoverColors(SquareButtonColorGroup squareButtonColorGroup) {
+  public void setDefaultHoverColors(SquareButtonColorGroup squareButtonColorGroup) {
     setHoverColors(squareButtonColorGroup.getTopBackgroundColor(),
-            squareButtonColorGroup.getBottomBackgroundColor(),
-            squareButtonColorGroup.getBorderColor(),
-            squareButtonColorGroup.getFontColor());
+      squareButtonColorGroup.getBottomBackgroundColor(),
+      squareButtonColorGroup.getBorderColor(),
+      squareButtonColorGroup.getFontColor());
   }
 
   /**
@@ -1071,18 +1042,18 @@ public class SquareButton extends Canvas {
    * @param borderColor the color of the border around the button (if you don't want a border, use getBackground())
    * @param fontColor the color of the defaultFont inside the button
    */
-  public void setClickedColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-    if (topBackgroundColor != null) { this.clickedColor = topBackgroundColor; }
-    if (bottomBackgroundColor != null) { this.clickedColor2 = bottomBackgroundColor; }
-    if (borderColor != null) { this.clickedBorderColor = borderColor; }
-    if (fontColor != null) { this.clickedFontColor = fontColor; }
+  public void setDefaultClickedColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
+    if (topBackgroundColor != null) { this.defaultClickedColor = topBackgroundColor; }
+    if (bottomBackgroundColor != null) { this.defaultClickedColor2 = bottomBackgroundColor; }
+    if (borderColor != null) { this.defaultClickedBorderColor = borderColor; }
+    if (fontColor != null) { this.defaultClickedFontColor = fontColor; }
   }
 
-  public void setClickedColors(SquareButtonColorGroup squareButtonColorGroup) {
+  public void setDefaultClickedColors(SquareButtonColorGroup squareButtonColorGroup) {
     setClickedColors(squareButtonColorGroup.getTopBackgroundColor(),
-            squareButtonColorGroup.getBottomBackgroundColor(),
-            squareButtonColorGroup.getBorderColor(),
-            squareButtonColorGroup.getFontColor());
+      squareButtonColorGroup.getBottomBackgroundColor(),
+      squareButtonColorGroup.getBorderColor(),
+      squareButtonColorGroup.getFontColor());
   }
 
   /**
@@ -1093,11 +1064,11 @@ public class SquareButton extends Canvas {
    * @param borderColor the color of the border around the button (if you don't want a border, use getBackground())
    * @param fontColor the color of the defaultFont inside the button
    */
-  public void setSelectedColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-    if (topBackgroundColor != null) { this.selectedColor = topBackgroundColor; }
-    if (bottomBackgroundColor != null) { this.selectedColor2 = bottomBackgroundColor; }
-    if (borderColor != null) { this.selectedBorderColor = borderColor; }
-    if (fontColor != null) { this.selectedFontColor = fontColor; }
+  public void setDefaultSelectedColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
+    if (topBackgroundColor != null) { this.defaultSelectedColor = topBackgroundColor; }
+    if (bottomBackgroundColor != null) { this.defaultSelectedColor2 = bottomBackgroundColor; }
+    if (borderColor != null) { this.defaultSelectedBorderColor = borderColor; }
+    if (fontColor != null) { this.defaultSelectedFontColor = fontColor; }
   }
 
   /**
@@ -1105,11 +1076,11 @@ public class SquareButton extends Canvas {
    *
    * @param squareButtonColorGroup
    */
-  public void setSelectedColors(SquareButtonColorGroup squareButtonColorGroup) {
+  public void setDefaultSelectedColors(SquareButtonColorGroup squareButtonColorGroup) {
     setSelectedColors(squareButtonColorGroup.getTopBackgroundColor(),
-            squareButtonColorGroup.getBottomBackgroundColor(),
-            squareButtonColorGroup.getBorderColor(),
-            squareButtonColorGroup.getFontColor());
+      squareButtonColorGroup.getBottomBackgroundColor(),
+      squareButtonColorGroup.getBorderColor(),
+      squareButtonColorGroup.getFontColor());
   }
 
   /**
@@ -1120,11 +1091,11 @@ public class SquareButton extends Canvas {
    * @param borderColor the color of the border around the button (if you don't want a border, use getBackground())
    * @param fontColor the color of the defaultFont inside the button
    */
-  public void setInactiveColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-    if (topBackgroundColor != null) { this.inactiveColor = topBackgroundColor; }
-    if (bottomBackgroundColor != null) { this.inactiveColor2 = bottomBackgroundColor; }
-    if (borderColor != null) { this.inactiveBorderColor = borderColor; }
-    if (fontColor != null) { this.inactiveFontColor = fontColor; }
+  public void setDefaultInactiveColors(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
+    if (topBackgroundColor != null) { this.defaultInactiveColor = topBackgroundColor; }
+    if (bottomBackgroundColor != null) { this.defaultInactiveColor2 = bottomBackgroundColor; }
+    if (borderColor != null) { this.defaultInactiveBorderColor = borderColor; }
+    if (fontColor != null) { this.defaultInactiveFontColor = fontColor; }
   }
 
   /**
@@ -1132,11 +1103,11 @@ public class SquareButton extends Canvas {
    *
    * @param squareButtonColorGroup
    */
-  public void setInactiveColors(SquareButtonColorGroup squareButtonColorGroup) {
+  public void setDefaultInactiveColors(SquareButtonColorGroup squareButtonColorGroup) {
     setInactiveColors(squareButtonColorGroup.getTopBackgroundColor(),
-            squareButtonColorGroup.getBottomBackgroundColor(),
-            squareButtonColorGroup.getBorderColor(),
-            squareButtonColorGroup.getFontColor());
+      squareButtonColorGroup.getBottomBackgroundColor(),
+      squareButtonColorGroup.getBorderColor(),
+      squareButtonColorGroup.getFontColor());
   }
 
   public int getCornerRadius() {
@@ -1149,11 +1120,488 @@ public class SquareButton extends Canvas {
 
   protected void setAccessibilityName(final String name) {
     getAccessible().addAccessibleListener
-            (new AccessibleAdapter() {
-              public void getName(AccessibleEvent e) {
-                e.result = name;
-              }
-            });
+      (new AccessibleAdapter() {
+        public void getName(AccessibleEvent e) {
+          e.result = name;
+        }
+      });
+  }
+
+  public void addItem(SegmentedSquareButtonItem item) {
+    items.add(item);
+  }
+
+  public void addItem(int index, SegmentedSquareButtonItem item) {
+    items.add(index, item);
+  }
+
+  protected SegmentedSquareButtonItem findItem(int x, int y) {
+    SegmentedSquareButtonItem item = null;
+    for(SegmentedSquareButtonItem i : items) {
+      if(i.getRectangle().contains(x,y)) {
+        item = i;
+        break;
+      }
+    }
+    return item;
+  }
+
+  private enum SegmentStyle {
+    TEXT_ONLY,
+    IMAGE_ONLY,
+    IMAGE_AND_TEXT,
+    BLANK
+  }
+
+  public abstract class SegmentedSquareButtonItem {
+    private String text;
+    protected Image image, backgroundImage;
+    private String toolTip;
+    private String accesibilityName;
+    private Rectangle rectangle;
+    private SegmentStyle segmentStyle;
+
+    protected Font font;
+    protected Color fontColor, hoverFontColor, clickedFontColor, inactiveFontColor, selectedFontColor;
+    protected Color borderColor, hoverBorderColor, clickedBorderColor, inactiveBorderColor, selectedBorderColor;
+    protected Color currentColor, currentColor2, currentFontColor, currentBorderColor;
+    protected Color backgroundColor, backgroundColor2;
+    protected Color clickedColor, clickedColor2;
+    protected Color hoverColor, hoverColor2;
+    protected Color inactiveColor, inactiveColor2;
+    protected Color selectedColor, selectedColor2;
+
+    boolean isFocused = false;
+
+    protected ImagePosition imagePosition = ImagePosition.LEFT_OF_TEXT;
+
+    protected boolean horizontallyCenterContents = false;
+    protected boolean verticallyCenterContents = true;
+
+    protected void checkSettings() {
+      if(text != null && image != null) {
+        segmentStyle = SegmentStyle.IMAGE_AND_TEXT;
+      } else if(text != null && image == null) {
+        segmentStyle = SegmentStyle.TEXT_ONLY;
+      } else if(text == null && image != null) {
+        segmentStyle = SegmentStyle.IMAGE_ONLY;
+      } else {
+        segmentStyle = SegmentStyle.BLANK;
+      }
+    }
+
+    public String getText() {
+      return text;
+    }
+
+    public SegmentedSquareButtonItem setText(String text) {
+      this.text = text;
+      checkSettings();
+      return this;
+    }
+
+    public Image getImage() {
+      return image;
+    }
+
+    public SegmentedSquareButtonItem setImage(Image image) {
+      this.image = image;
+      checkSettings();
+      return this;
+    }
+
+    public String getToolTip() {
+      return toolTip;
+    }
+
+    public SegmentedSquareButtonItem setToolTip(String toolTip) {
+      this.toolTip = toolTip;
+      return this;
+    }
+
+    public String getAccesibilityName() {
+      return accesibilityName;
+    }
+
+    public SegmentedSquareButtonItem setAccesibilityName(String accesibilityName) {
+      this.accesibilityName = accesibilityName;
+      return this;
+    }
+
+    public ImagePosition getImagePosition() {
+      return imagePosition;
+    }
+
+    public SegmentedSquareButtonItem setImagePosition(ImagePosition imagePosition) {
+      this.imagePosition = imagePosition;
+      return this;
+    }
+
+    protected SegmentStyle getSegmentStyle() {
+      return segmentStyle;
+    }
+
+    protected Rectangle getRectangle() {
+      return rectangle;
+    }
+
+    protected void setRectangle(Rectangle rectangle) {
+      this.rectangle = rectangle;
+    }
+
+    public Image getBackgroundImage() {
+      return backgroundImage;
+    }
+
+    public SegmentedSquareButtonItem setBackgroundImage(Image backgroundImage) {
+      this.backgroundImage = backgroundImage;
+      return this;
+    }
+
+    public SegmentedSquareButtonItem setSegmentStyle(SegmentStyle segmentStyle) {
+      this.segmentStyle = segmentStyle;
+      return this;
+    }
+
+    public Font getFont() {
+      if(font == null) {
+        font = defaultFont;
+      }
+      return font;
+    }
+
+    public SegmentedSquareButtonItem setFont(Font font) {
+      this.font = font;
+      return this;
+    }
+
+    public Color getFontColor() {
+      if(fontColor == null) {
+        fontColor = defaultFontColor;
+      }
+      return fontColor;
+    }
+
+    public SegmentedSquareButtonItem setFontColor(Color fontColor) {
+      this.fontColor = fontColor;
+      return this;
+    }
+
+    public Color getHoverFontColor() {
+      if(hoverFontColor == null) {
+        hoverFontColor = defaultHoverFontColor;
+      }
+      return hoverFontColor;
+    }
+
+    public SegmentedSquareButtonItem setHoverFontColor(Color hoverFontColor) {
+      this.hoverFontColor = hoverFontColor;
+      return this;
+    }
+
+    public Color getClickedFontColor() {
+      if(clickedFontColor == null) {
+        clickedFontColor = defaultClickedFontColor;
+      }
+      return clickedFontColor;
+    }
+
+    public SegmentedSquareButtonItem setClickedFontColor(Color clickedFontColor) {
+      this.clickedFontColor = clickedFontColor;
+      return this;
+    }
+
+    public Color getInactiveFontColor() {
+      if(inactiveFontColor == null) {
+        inactiveFontColor = defaultInactiveFontColor;
+      }
+      return inactiveFontColor;
+    }
+
+    public SegmentedSquareButtonItem setInactiveFontColor(Color inactiveFontColor) {
+      this.inactiveFontColor = inactiveFontColor;
+      return this;
+    }
+
+    public Color getSelectedFontColor() {
+      if(selectedFontColor == null) {
+        selectedFontColor = defaultSelectedFontColor;
+      }
+      return selectedFontColor;
+    }
+
+    public SegmentedSquareButtonItem setSelectedFontColor(Color selectedFontColor) {
+      this.selectedFontColor = selectedFontColor;
+      return this;
+    }
+
+    public Color getBorderColor() {
+      if(borderColor == null) {
+        borderColor = defaultBorderColor;
+      }
+      return borderColor;
+    }
+
+    public SegmentedSquareButtonItem setBorderColor(Color borderColor) {
+      this.borderColor = borderColor;
+      return this;
+    }
+
+    public Color getHoverBorderColor() {
+      if(hoverBorderColor == null) {
+        hoverBorderColor = defaultHoverBorderColor;
+      }
+      return hoverBorderColor;
+    }
+
+    public SegmentedSquareButtonItem setHoverBorderColor(Color hoverBorderColor) {
+      this.hoverBorderColor = hoverBorderColor;
+      return this;
+    }
+
+    public Color getClickedBorderColor() {
+      if(clickedBorderColor == null) {
+        clickedBorderColor = defaultClickedBorderColor;
+      }
+      return clickedBorderColor;
+    }
+
+    public SegmentedSquareButtonItem setClickedBorderColor(Color clickedBorderColor) {
+      this.clickedBorderColor = clickedBorderColor;
+      return this;
+    }
+
+    public Color getInactiveBorderColor() {
+      if(inactiveBorderColor == null) {
+        inactiveBorderColor = defaultInactiveBorderColor;
+      }
+      return inactiveBorderColor;
+    }
+
+    public SegmentedSquareButtonItem setInactiveBorderColor(Color inactiveBorderColor) {
+      this.inactiveBorderColor = inactiveBorderColor;
+      return this;
+    }
+
+    public Color getSelectedBorderColor() {
+      if(selectedBorderColor == null) {
+        selectedBorderColor = defaultSelectedBorderColor;
+      }
+      return selectedBorderColor;
+    }
+
+    public SegmentedSquareButtonItem setSelectedBorderColor(Color selectedBorderColor) {
+      this.selectedBorderColor = selectedBorderColor;
+      return this;
+    }
+
+    public Color getBackgroundColor() {
+      return backgroundColor;
+    }
+
+    public SegmentedSquareButtonItem setBackgroundColor(Color backgroundColor) {
+      this.backgroundColor = backgroundColor;
+      return this;
+    }
+
+    public Color getBackgroundColor2() {
+      return backgroundColor2;
+    }
+
+    public SegmentedSquareButtonItem setBackgroundColor2(Color backgroundColor2) {
+      this.backgroundColor2 = backgroundColor2;
+      return this;
+    }
+
+    public Color getClickedColor() {
+      return clickedColor;
+    }
+
+    public SegmentedSquareButtonItem setClickedColor(Color clickedColor) {
+      this.clickedColor = clickedColor;
+      return this;
+    }
+
+    public Color getClickedColor2() {
+      return clickedColor2;
+    }
+
+    public SegmentedSquareButtonItem setClickedColor2(Color clickedColor2) {
+      this.clickedColor2 = clickedColor2;
+      return this;
+    }
+
+    public Color getHoverColor() {
+      return hoverColor;
+    }
+
+    public SegmentedSquareButtonItem setHoverColor(Color hoverColor) {
+      this.hoverColor = hoverColor;
+      return this;
+    }
+
+    public Color getHoverColor2() {
+      return hoverColor2;
+    }
+
+    public SegmentedSquareButtonItem setHoverColor2(Color hoverColor2) {
+      this.hoverColor2 = hoverColor2;
+      return this;
+    }
+
+    public Color getInactiveColor() {
+      return inactiveColor;
+    }
+
+    public SegmentedSquareButtonItem setInactiveColor(Color inactiveColor) {
+      this.inactiveColor = inactiveColor;
+      return this;
+    }
+
+    public Color getInactiveColor2() {
+      return inactiveColor2;
+    }
+
+    public SegmentedSquareButtonItem setInactiveColor2(Color inactiveColor2) {
+      this.inactiveColor2 = inactiveColor2;
+      return this;
+    }
+
+    public Color getSelectedColor() {
+      return selectedColor;
+    }
+
+    public SegmentedSquareButtonItem setSelectedColor(Color selectedColor) {
+      this.selectedColor = selectedColor;
+      return this;
+    }
+
+    public Color getSelectedColor2() {
+      return selectedColor2;
+    }
+
+    public SegmentedSquareButtonItem setSelectedColor2(Color selectedColor2) {
+      this.selectedColor2 = selectedColor2;
+      return this;
+    }
+
+    Color getCurrentColor() {
+      return currentColor;
+    }
+
+    void setCurrentColor(Color currentColor) {
+      this.currentColor = currentColor;
+    }
+
+    Color getCurrentColor2() {
+      return currentColor2;
+    }
+
+    void setCurrentColor2(Color currentColor2) {
+      this.currentColor2 = currentColor2;
+    }
+
+    Color getCurrentFontColor() {
+      return currentFontColor;
+    }
+
+    void setCurrentFontColor(Color currentFontColor) {
+      this.currentFontColor = currentFontColor;
+    }
+
+    Color getCurrentBorderColor() {
+      return currentBorderColor;
+    }
+
+    void setCurrentBorderColor(Color currentBorderColor) {
+      this.currentBorderColor = currentBorderColor;
+    }
+
+    protected void setNormalColor() {
+      setMouseEventColor(getBackgroundColor(), getBackgroundColor2(), getBorderColor(), getFontColor());
+    }
+    protected void setHoverColor() {
+      setMouseEventColor(getHoverColor(), getHoverColor2(), getHoverBorderColor(), getHoverFontColor());
+    }
+    protected void setClickedColor() {
+      setMouseEventColor(getClickedColor(), getClickedColor2(), getClickedBorderColor(), getClickedFontColor());
+    }
+    protected void setInactiveColor() {
+      setMouseEventColor(getInactiveColor(), getInactiveColor2(), getInactiveBorderColor(), getInactiveFontColor());
+    }
+    protected void setSelectedColor() {
+      setMouseEventColor(getSelectedColor(), getSelectedColor2(), getSelectedBorderColor(), getSelectedFontColor());
+    }
+    protected void setMouseEventColor(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
+      if (!getEnabled())
+        return;
+
+      if (currentColor == null) {
+        currentColor = defaultBackgroundColor;
+        currentColor2 = defaultBackgroundColor2;
+        currentBorderColor = borderColor;
+        currentFontColor = fontColor;
+      }
+
+      boolean redrawFlag = false;
+      if ((topBackgroundColor != null) && (!currentColor.equals(topBackgroundColor) ||
+        !currentColor2.equals(bottomBackgroundColor))) {
+        currentColor = currentColor2 = topBackgroundColor;
+        if (bottomBackgroundColor != null) {
+          currentColor2 = bottomBackgroundColor;
+        }
+        redrawFlag = true;
+      }
+      if ((borderColor != null) && (!currentBorderColor.equals(borderColor))) {
+        defaultCurrentBorderColor = borderColor;
+        redrawFlag = true;
+      }
+      if ((fontColor != null) && (!currentFontColor.equals(fontColor))) {
+        currentFontColor = fontColor;
+        redrawFlag = true;
+      }
+      if (redrawFlag) { redraw(); }
+    }
+
+    void mouseDoubleClickEventRecieved() {
+      mouseDoubleClick();
+    }
+
+    void mouseDownEventRecieved() {
+      mouseDown();
+    }
+
+    void mouseUpEventRecieved() {
+      setHoverColor();
+      mouseUp();
+    }
+
+    void mouseEnterEventRecieved() {
+      setHoverColor();
+      mouseEnter();
+    }
+
+    void mouseHoverEventRecieved() {
+      setHoverColor();
+      mouseHover();
+    }
+
+    void mouseExitEventRecieved() {
+      if (isFocused) {
+        setSelectedColor();
+      } else {
+        setNormalColor();
+      }
+      mouseExit();
+    }
+
+    public void mouseDoubleClick() { }
+    public void mouseDown() { }
+    public void mouseUp() { }
+    public void mouseEnter() { }
+    public void mouseHover() { }
+    public void mouseExit() { }
+
   }
 
   public static class SquareButtonColorGroup {
@@ -1359,37 +1807,37 @@ public class SquareButton extends Canvas {
 
       if(defaultColors != null) {
         button.setDefaultColors(defaultColors.getTopBackgroundColor(),
-                defaultColors.getBottomBackgroundColor(),
-                defaultColors.getBorderColor(),
-                defaultColors.getFontColor());
+          defaultColors.getBottomBackgroundColor(),
+          defaultColors.getBorderColor(),
+          defaultColors.getFontColor());
       }
 
       if(selectedColors != null) {
         button.setSelectedColors(selectedColors.getTopBackgroundColor(),
-                selectedColors.getBottomBackgroundColor(),
-                selectedColors.getBorderColor(),
-                selectedColors.getFontColor());
+          selectedColors.getBottomBackgroundColor(),
+          selectedColors.getBorderColor(),
+          selectedColors.getFontColor());
       }
 
       if(hoverColors != null) {
         button.setHoverColors(hoverColors.getTopBackgroundColor(),
-                hoverColors.getBottomBackgroundColor(),
-                hoverColors.getBorderColor(),
-                hoverColors.getFontColor());
+          hoverColors.getBottomBackgroundColor(),
+          hoverColors.getBorderColor(),
+          hoverColors.getFontColor());
       }
 
       if(clickedColors != null) {
         button.setClickedColors(clickedColors.getTopBackgroundColor(),
-                clickedColors.getBottomBackgroundColor(),
-                clickedColors.getBorderColor(),
-                clickedColors.getFontColor());
+          clickedColors.getBottomBackgroundColor(),
+          clickedColors.getBorderColor(),
+          clickedColors.getFontColor());
       }
 
       if(inactiveColors != null) {
         button.setInactiveColors(inactiveColors.getTopBackgroundColor(),
-                inactiveColors.getBottomBackgroundColor(),
-                inactiveColors.getBorderColor(),
-                inactiveColors.getFontColor());
+          inactiveColors.getBottomBackgroundColor(),
+          inactiveColors.getBorderColor(),
+          inactiveColors.getFontColor());
       }
 
       if(accessibilityName != null) {

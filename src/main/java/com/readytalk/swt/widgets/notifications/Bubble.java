@@ -30,7 +30,7 @@ import java.util.logging.Logger;
  * Bubble will attempt to always be visible on screen.
  * If the default Bubble would appear off-screen, we will calculate a suitable location to appear.
  *
- * Bubble utilizes the system font, and provides a constructor to indicate use of a bolded font.
+ * Bubble utilizes the system defaultFont, and provides a constructor to indicate use of a bolded defaultFont.
  *
  * Bubble will also break up lines that would be longer than 400 pixels when drawn.
  * You can short-circuit this logic by providing your own line-breaks with <code>\n</code> characters in the text.
@@ -82,7 +82,7 @@ public class Bubble extends Widget implements Fadeable {
    * Constructs a new instance of the class. The Bubble does not appear until you call
    * <code>show()</code> or apply it to a component via the <code>BubbleRegistry</code>.
    * This is a convenience constructor which assumes you do not want the Bubble text to appear
-   * in a Bold font.
+   * in a Bold defaultFont.
    *
    * @param parentControl The parent element that the Bubble provides contextual help about
    * @param text The text you want to appear in the Bubble
@@ -98,7 +98,7 @@ public class Bubble extends Widget implements Fadeable {
    *
    * @param parentControl The parent element that the Bubble provides contextual help about
    * @param text The text you want to appear in the Bubble
-   * @param useBoldFont Whether or not we should draw the Bubble's text in a bold version of the system font
+   * @param useBoldFont Whether or not we should draw the Bubble's text in a bold version of the system defaultFont
    * @throws IllegalArgumentException Thrown if the parentControl or text is <code>null</code>
    */
   public Bubble(Control parentControl, String text, boolean useBoldFont) throws IllegalArgumentException {
