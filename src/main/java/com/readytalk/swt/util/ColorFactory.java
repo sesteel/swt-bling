@@ -3,6 +3,7 @@ package com.readytalk.swt.util;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,7 +43,7 @@ public class ColorFactory implements Runnable {
    */
   private ColorFactory() {}
 
-  static private class ColorReference extends PhantomReference<Color> {
+  static private class ColorReference extends WeakReference<Color> {
     private RGB rgb;
 
     public ColorReference(final RGB rgb, final Color color, final ReferenceQueue<? super Color> referenceQueue) {
@@ -53,8 +54,7 @@ public class ColorFactory implements Runnable {
     @Override
     public Color get() {
       try {
-        // PhantomReference's get always returns null; while WeakReference does not get
-        // enqueued into the referenceQueue
+        // PhantomReference's get always returns null; while WeakReference is cleaned up to fast
         Field field = Reference.class.getDeclaredField("referent");
         field.setAccessible(true);
         return (Color)field.get(this);
@@ -68,12 +68,15 @@ public class ColorFactory implements Runnable {
      * Make sure no color reference escapes the scope of this method!
      */
     public void cleanup() {
-      Color color = get();
-      if (color != null && !color.isDisposed()) {
-        disposedCount++;
-        LOG.log(Level.INFO, "ColorFactory disposing " + color.toString() + " created: " + creationCount + " disposed:" + disposedCount);
-        color.dispose();
-        colorMap.remove(rgb);
+      synchronized (colorMap) {
+        Color color = get();
+        if (color != null && !color.isDisposed()) {
+          disposedCount++;
+          LOG.log(Level.INFO, "ColorFactory disposing " + color.toString() + " created: " + creationCount + " disposed:" + disposedCount);
+          color.dispose();
+          colorMap.remove(rgb);
+          clear();
+        }
       }
     }
   }
@@ -124,16 +127,18 @@ public class ColorFactory implements Runnable {
    * @return A possibly shared Color object with the specified rgb values
    */
   public static Color getColor(Device device, RGB rgb) {
-    Color color = null;
-    ColorReference colorReference = colorMap.get(rgb);
-    if (colorReference == null || (color = colorReference.get()) == null || color.isDisposed()) {
-      creationCount++;
-      LOG.log(Level.INFO, "ColorFactory creating " + rgb);
-      color = new Color(device, rgb);
-      colorReference = new ColorReference(rgb, color, referenceQueue);
-      colorMap.put(rgb, colorReference);
+    synchronized (colorMap) {
+      Color color = null;
+      ColorReference colorReference = colorMap.get(rgb);
+      if (colorReference == null || colorReference.isEnqueued() || (color = colorReference.get()) == null || color.isDisposed()) {
+        creationCount++;
+        LOG.log(Level.INFO, "ColorFactory creating " + rgb);
+        color = new Color(device, rgb);
+        colorReference = new ColorReference(rgb, color, referenceQueue);
+        colorMap.put(rgb, colorReference);
+      }
+      return color;
     }
-    return color;
   }
 
   /**
@@ -141,13 +146,15 @@ public class ColorFactory implements Runnable {
    * so use this with care.
    */
   public static void disposeAll() {
-    for (Reference<Color> colorReference: colorMap.values()) {
-      Color c = colorReference.get();
-      if (c != null && !c.isDisposed()) {
-        c.dispose();
-        disposedCount++;
+    synchronized (colorMap) {
+      for (Reference<Color> colorReference: colorMap.values()) {
+        Color c = colorReference.get();
+        if (c != null && !c.isDisposed()) {
+          c.dispose();
+          disposedCount++;
+        }
       }
+      colorMap.clear();
     }
-    colorMap.clear();
   }
 }
