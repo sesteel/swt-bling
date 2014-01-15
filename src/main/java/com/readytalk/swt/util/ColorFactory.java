@@ -54,7 +54,7 @@ public class ColorFactory implements Runnable {
     @Override
     public Color get() {
       try {
-        // PhantomReference's get always returns null; while WeakReference is cleaned up to fast
+        // PhantomReference's get always returns null; while WeakReference is cleaned up too quickly
         Field field = Reference.class.getDeclaredField("referent");
         field.setAccessible(true);
         return (Color)field.get(this);
