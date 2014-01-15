@@ -4,6 +4,7 @@ import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
 import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.logging.Level;
@@ -29,7 +30,7 @@ public class ColorFactory implements Runnable {
   static long disposedCount = 0;
 
   static {
-    colorMap = new WeakHashMap<RGB, ColorReference>();
+    colorMap = new HashMap<RGB, ColorReference>();
     referenceQueue = new ReferenceQueue<Color>();
     thread = new Thread(new ColorFactory());
     thread.setDaemon(true);
