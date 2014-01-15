@@ -85,7 +85,6 @@ public class ColorFactory implements Runnable {
         while ((reference = referenceQueue.remove()) != null) {
           ColorReference colorReference = (ColorReference)reference;
           colorReference.cleanup();
-          colorMap.remove(colorReference.rgb);
         }
         Thread.sleep(1000);
       } catch (Exception e) {
