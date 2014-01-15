@@ -43,7 +43,7 @@ public class ColorFactory implements Runnable {
    */
   private ColorFactory() {}
 
-  static private class ColorReference extends WeakReference<Color> {
+  static private class ColorReference extends PhantomReference<Color> {
     private RGB rgb;
 
     public ColorReference(final RGB rgb, final Color color, final ReferenceQueue<? super Color> referenceQueue) {
