@@ -130,7 +130,7 @@ public class ColorFactory implements Runnable {
     synchronized (colorMap) {
       Color color = null;
       ColorReference colorReference = colorMap.get(rgb);
-      if (colorReference == null || colorReference.isEnqueued() || (color = colorReference.get()) == null || color.isDisposed()) {
+      if (colorReference == null || !colorReference.isEnqueued() || (color = colorReference.get()) == null || color.isDisposed()) {
         creationCount++;
         LOG.log(Level.INFO, "ColorFactory creating " + rgb);
         color = new Color(device, rgb);
