@@ -1,14 +1,5 @@
 package com.readytalk.swt.util;
 
-import java.lang.ref.PhantomReference;
-import java.lang.ref.Reference;
-import java.lang.ref.ReferenceQueue;
-import java.lang.ref.WeakReference;
-import java.lang.reflect.Field;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.WeakHashMap;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.eclipse.swt.graphics.Color;
@@ -22,79 +13,21 @@ import org.eclipse.swt.widgets.Display;
  * This currently doesn't do any reference counting or anything else, which we should
  * probably implement in the future.
  */
-public class ColorFactory implements Runnable {
-  private static final Logger LOG = Logger.getLogger(ColorFactory.class.getName());
-  static Map<RGB, ColorReference> colorMap;
-  static ReferenceQueue<Color> referenceQueue;
-  static Thread thread;
-  static long creationCount = 0;
-  static long disposedCount = 0;
+public class ColorFactory {
 
-  static {
-    colorMap = new HashMap<RGB, ColorReference>();
-    referenceQueue = new ReferenceQueue<Color>();
-    thread = new Thread(new ColorFactory());
-    thread.setDaemon(true);
-    thread.start();
-  }
+  private static final Logger LOG = Logger.getLogger(ColorFactory.class.getName());
+
+  static ResourceCache<RGB, Color> cache = new ResourceCache<RGB, Color>(new ResourceBuilder<RGB, Color>() {
+    @Override
+    public Color build(Device device, RGB rgb) {
+      return new Color(device, rgb);
+    }
+  }, 10);
 
   /*
    * hidden constructor
    */
   private ColorFactory() {}
-
-  static private class ColorReference extends PhantomReference<Color> {
-    private RGB rgb;
-
-    public ColorReference(final RGB rgb, final Color color, final ReferenceQueue<? super Color> referenceQueue) {
-      super(color, referenceQueue);
-      this.rgb = rgb;
-    }
-
-    @Override
-    public Color get() {
-      try {
-        // PhantomReference's get always returns null; while WeakReference is cleaned up too quickly
-        Field field = Reference.class.getDeclaredField("referent");
-        field.setAccessible(true);
-        return (Color)field.get(this);
-      } catch (Exception e) {
-        LOG.log(Level.SEVERE, e.getMessage(), e);
-      }
-      return null;
-    }
-
-    /*
-     * Make sure no color reference escapes the scope of this method!
-     */
-    public void cleanup() {
-      synchronized (colorMap) {
-        Color color = get();
-        if (color != null && !color.isDisposed()) {
-          disposedCount++;
-          LOG.log(Level.INFO, "ColorFactory disposing " + color.toString() + " created: " + creationCount + " disposed:" + disposedCount);
-          color.dispose();
-          colorMap.remove(rgb);
-          clear();
-        }
-      }
-    }
-  }
-
-  public void run() {
-    while (true) {
-      try {
-        Reference reference;
-        while ((reference = referenceQueue.remove()) != null) {
-          ColorReference colorReference = (ColorReference)reference;
-          colorReference.cleanup();
-        }
-        Thread.sleep(1000);
-      } catch (Exception e) {
-        LOG.log(Level.SEVERE, e.getMessage(), e);
-      }
-    }
-  }
 
   // this should use the current display
   public static Color getColor(int red, int green, int blue) {
@@ -127,34 +60,14 @@ public class ColorFactory implements Runnable {
    * @return A possibly shared Color object with the specified rgb values
    */
   public static Color getColor(Device device, RGB rgb) {
-    synchronized (colorMap) {
-      Color color = null;
-      ColorReference colorReference = colorMap.get(rgb);
-      if (colorReference == null || colorReference.isEnqueued() || (color = colorReference.get()) == null || color.isDisposed()) {
-        creationCount++;
-        LOG.log(Level.INFO, "ColorFactory creating " + rgb);
-        color = new Color(device, rgb);
-        colorReference = new ColorReference(rgb, color, referenceQueue);
-        colorMap.put(rgb, colorReference);
-      }
-      return color;
-    }
+    return cache.get(device, rgb);
   }
 
   /**
    * Disposes all the colors and clears the internal storage of colors. Does not do ref counting,
-   * so use this with care.
+   * so use this with care.  Use this during shutdown.
    */
   public static void disposeAll() {
-    synchronized (colorMap) {
-      for (Reference<Color> colorReference: colorMap.values()) {
-        Color c = colorReference.get();
-        if (c != null && !c.isDisposed()) {
-          c.dispose();
-          disposedCount++;
-        }
-      }
-      colorMap.clear();
-    }
+    cache.evacuate();
   }
 }

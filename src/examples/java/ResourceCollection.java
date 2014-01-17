@@ -40,19 +40,12 @@ public class ResourceCollection {
     new Thread(new Runnable() {
       @Override
       public void run() {
-
-        for(int r = 0; r < 200; r++) {
-          for(int g = 0; g < 200; g++) {
-            for(int b = 0; b < 200; b++) {
+        for(int r = 0; r < 50; r++) {
+          for(int g = 0; g < 5; g++) {
+            for(int b = 0; b < 5; b++) {
               c = ColorFactory.getColor(r, g, b);
             }
           }
-        }
-        System.gc();
-        try {
-          Thread.sleep(1000);
-        } catch (InterruptedException e) {
-          e.printStackTrace();
         }
       }
     }).start();

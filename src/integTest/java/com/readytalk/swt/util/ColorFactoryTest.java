@@ -68,14 +68,14 @@ public class ColorFactoryTest {
     ColorFactory.getColor(shell.getDisplay(), 23, 34, 45);
     ColorFactory.getColor(shell.getDisplay(), 255, 214, 55);
     ColorFactory.getColor(shell.getDisplay(), 255, 94, 55);
-    Assert.assertEquals(3, ColorFactory.colorMap.size());
+    Assert.assertEquals(3, ColorFactory.cache.size());
   }
 
   @Test
   public void getColor_CreateAndDisposeColor_ColorMapSizeIs0() {
     ColorFactory.getColor(shell.getDisplay(), 23, 34, 45);
     ColorFactory.disposeAll();
-    Assert.assertEquals(0, ColorFactory.colorMap.size());
+    Assert.assertEquals(0, ColorFactory.cache.size());
   }
 
   @Test
@@ -102,23 +102,5 @@ public class ColorFactoryTest {
     ColorFactory.getColor(-33, -34, -45);
   }
 
-  @Test
-  public void getColor_ColorCreated_ColorDisposed() {
-    System.gc();
-    for(int r = 0; r < 1; r++) {
-      for(int g = 0; g < 1; g++) {
-        for(int b = 0; b < 1; b++) {
-          Color c = ColorFactory.getColor(r, g, b);
-          shell.setBackground(c);
-        }
-      }
-    }
-    System.gc();
-    try {
-      Thread.sleep(10000);
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    }
-    Assert.assertEquals(ColorFactory.creationCount, ColorFactory.disposedCount);
-  }
+
 }
