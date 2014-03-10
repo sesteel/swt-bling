@@ -62,7 +62,6 @@ public class BubbleRegistry {
     }
   }
 
-
   void addTags(Object target, BubbleTag ... tags) {
     BubbleRegistrant registrant = findRegistrant(target);
     if(registrant == null) {

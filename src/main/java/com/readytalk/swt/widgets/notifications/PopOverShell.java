@@ -40,6 +40,7 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   CenteringEdge popOverEdgeCenteredOnParent = DEFAULT_EDGE_CENTERED;
 
   private Object fadeLock = new Object();
+  private FadeEffect fadeEffect;
 
   protected Control parentControl;
   protected Shell popOverShell;
@@ -93,6 +94,13 @@ public abstract class PopOverShell extends Widget implements Fadeable {
    * provide the <code>Region</code> via the abstract <code>getAppropriatePopOverRegion()</code> method.
    */
   public void show() {
+
+    if (popOverShell == null) {
+      popOverShell = new Shell(parentShell, SWT.NO_TRIM | SWT.TOOL);
+      popOverShell.setBackground(backgroundColor);
+      popOverShell.setLayout(new FillLayout());
+    }
+
     runBeforeShowPopOverShell();
 
     Point popOverShellSize = getAppropriatePopOverSize();
@@ -180,6 +188,7 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   }
 
   private void onDispose(Event event) {
+    LOG.info(">>>>>>>>>>>>>> POS: Disposed");
     widgetDispose();
 
     parentControl.removeListener(SWT.Dispose, parentListener);
@@ -384,16 +393,22 @@ public abstract class PopOverShell extends Widget implements Fadeable {
 
     try {
       fadeEffectInProgress = true;
-      FadeEffect fade = new FadeEffect.FadeEffectBuilder().
+      fadeEffect = new FadeEffect.FadeEffectBuilder().
               setFadeable(this).
               setFadeCallback(new PopOverShellFadeCallback()).
               setFadeTimeInMilliseconds(FADE_OUT_TIME).
               setCurrentAlpha(FULLY_VISIBLE_ALPHA).
               setTargetAlpha(FULLY_HIDDEN_ALPHA).build();
 
-      fade.startEffect();
+      fadeEffect.startEffect();
     } catch (InvalidEffectArgumentException e) {
       LOG.warning("Invalid argument provided to FadeEffect.");
+    }
+  }
+  
+  protected void stopFadeEffect() {
+    if (fadeEffect != null && fadeEffectInProgress) {
+      fadeEffect.stopEffect();
     }
   }
 
@@ -432,9 +447,11 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   }
 
   void hide() {
-    popOverShell.setVisible(false);
-    resetState();
-    resetWidget();
+    if (popOverShell != null && !popOverShell.isDisposed()) {
+      popOverShell.setVisible(false);
+      resetState();
+      resetWidget();
+    }
   }
 
   private void resetState() {

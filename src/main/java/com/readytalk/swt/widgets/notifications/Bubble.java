@@ -1,21 +1,23 @@
 package com.readytalk.swt.widgets.notifications;
 
+import com.readytalk.swt.effects.FadeEffect;
 import com.readytalk.swt.text.painter.TextPainter;
 import com.readytalk.swt.text.tokenizer.TextTokenizerFactory;
 import com.readytalk.swt.text.tokenizer.TextTokenizerType;
 import com.readytalk.swt.util.ColorFactory;
 import com.readytalk.swt.widgets.CustomElementDataProvider;
 import com.readytalk.swt.widgets.notifications.BubbleRegistry.BubbleRegistrant;
+
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.accessibility.AccessibleAdapter;
 import org.eclipse.swt.accessibility.AccessibleEvent;
 import org.eclipse.swt.graphics.Color;
-import org.eclipse.swt.graphics.FontData;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Listener;
 
@@ -58,6 +60,7 @@ public class Bubble extends PopOverShell {
   private Color borderColor;
 
   private TextPainter textPainter;
+  private boolean useBoldFont;
 
   /**
    * Creates and attaches a bubble to a component that implements <code>CustomElementDataProvider</code>.
@@ -90,8 +93,6 @@ public class Bubble extends PopOverShell {
     this(parentControl, customElementDataProvider, text, false, tags);
   }
 
-
-
   private Bubble(Control parentControl, CustomElementDataProvider customElementDataProvider, String text,
                  boolean useBoldFont, 
                  BubbleTag ... tags)
@@ -102,30 +103,8 @@ public class Bubble extends PopOverShell {
       throw new IllegalArgumentException("Bubble text cannot be null.");
     }
 
-
-    // This can be removed once the deprecated constructors are pruned (in addition to the parameter useBoldFont)
-    if (useBoldFont) {
-      text = "\'\'\'" + text + "\'\'\'";
-    }
-
-    textPainter = new TextPainter(getPopOverShell())
-            .setText(text)
-            .setTextColor(TEXT_COLOR)
-            .setTokenizer(TextTokenizerFactory.createTextTokenizer(TextTokenizerType.FORMATTED))
-            .setPadding(TEXT_TOP_AND_BOTTOM_PADDING, TEXT_TOP_AND_BOTTOM_PADDING, TEXT_LEFT_AND_RIGHT_PADDING, TEXT_LEFT_AND_RIGHT_PADDING);
-
-    // TextPainter does the calculations to see if we need to break the lines, thus we set the raw string,
-    // do the calculations and then set the text again. If we don't break the String this is a no-op.
-    this.tooltipText = maybeBreakLines(textPainter);
-    textPainter.setText(tooltipText);
-
-
-    // Remember to clean up after yourself onDispose.
-    borderColor = ColorFactory.getColor(getDisplay(), BORDER_COLOR);
-
-    this.verticalLocation = VerticalLocation.BELOW;
-    this.centeringEdge = CenteringEdge.LEFT;
-
+    this.useBoldFont = useBoldFont;
+    setText(text);
     attachListeners();
     registerBubble(getPoppedOverItem(), tags);
   }
@@ -232,6 +211,14 @@ public class Bubble extends PopOverShell {
     BubbleRegistry.getInstance().removeTags(registrant, bubbleTags);
   }
 
+  @Override
+  public void dispose() {
+    stopFadeEffect();
+    popOverShell.setVisible(false);
+    deactivateBubble();
+    super.dispose();
+  }
+
   /**
    * Remove the Bubble from the Registry.
    */
@@ -256,30 +243,57 @@ public class Bubble extends PopOverShell {
   }
 
   private void attachListeners() {
-    listener = new Listener() {
-      public void handleEvent(Event event) {
-        switch (event.type) {
-          case SWT.Paint:
-            onPaint(event);
-            break;
-          case SWT.MouseDown:
-            onMouseDown(event);
-            break;
-          case SWT.MouseEnter:
-            BubbleRegistrant registrant = BubbleRegistry.getInstance().findRegistrant(getPoppedOverItem().getControlOrCustomElement());
-            registrant.dismissBubble();
-            registrant.bubble.setDisableAutoHide(false);
-            break;
-          default:
-            break;
+    if (listener == null) {
+      listener = new Listener() {
+        public void handleEvent(Event event) {
+          switch (event.type) {
+            case SWT.Paint:
+              onPaint(event);
+              break;
+            case SWT.MouseDown:
+              onMouseDown(event);
+              break;
+            case SWT.MouseEnter:
+              BubbleRegistrant registrant = BubbleRegistry.getInstance().findRegistrant(getPoppedOverItem().getControlOrCustomElement());
+              registrant.dismissBubble();
+              registrant.bubble.setDisableAutoHide(false);
+              break;
+            default:
+              break;
+          }
         }
-      }
-    };
+      };
+    }
     popOverShell.addListener(SWT.Paint, listener);
     popOverShell.addListener(SWT.MouseDown, listener);
     popOverShell.addListener(SWT.MouseEnter, listener);
 
     addAccessibilityHooks(parentControl);
+  }
+
+  public void setText(String text) {
+    // This can be removed once the deprecated constructors are pruned (in addition to the parameter useBoldFont)
+    if (useBoldFont) {
+      text = "\'\'\'" + text + "\'\'\'";
+    }
+
+    textPainter = new TextPainter(getPopOverShell())
+        .setText(text)
+        .setTextColor(TEXT_COLOR)
+        .setTokenizer(TextTokenizerFactory.createTextTokenizer(TextTokenizerType.FORMATTED))
+        .setPadding(TEXT_TOP_AND_BOTTOM_PADDING, TEXT_TOP_AND_BOTTOM_PADDING, TEXT_LEFT_AND_RIGHT_PADDING, TEXT_LEFT_AND_RIGHT_PADDING);
+
+    // TextPainter does the calculations to see if we need to break the lines, thus we set the raw string,
+    // do the calculations and then set the text again. If we don't break the String this is a no-op.
+    this.tooltipText = maybeBreakLines(textPainter);
+    textPainter.setText(tooltipText);
+
+
+    // Remember to clean up after yourself onDispose.
+    borderColor = ColorFactory.getColor(getDisplay(), BORDER_COLOR);
+
+    this.verticalLocation = VerticalLocation.BELOW;
+    this.centeringEdge = CenteringEdge.LEFT;
   }
 
   void resetWidget() {
@@ -367,10 +381,16 @@ public class Bubble extends PopOverShell {
   }
 
   private Point getTextExtent(TextPainter textPainter) {
-    GC gc = new GC(getDisplay());
-    Rectangle textExtent = textPainter.precomputeSize(gc);
-    gc.dispose();
+    Point point = new Point(0, 0);
+    Display display = Display.getCurrent();
 
-    return new Point(textExtent.width, textExtent.height);
+    if (display != null && !display.isDisposed()) {
+      GC gc = new GC(display);
+      Rectangle textExtent = textPainter.precomputeSize(gc);
+      point.x = textExtent.width;
+      point.y = textExtent.height;
+      gc.dispose();
+    }
+    return point;
   }
 }
