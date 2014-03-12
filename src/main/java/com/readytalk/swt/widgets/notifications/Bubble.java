@@ -214,9 +214,11 @@ public class Bubble extends PopOverShell {
   @Override
   public void dispose() {
     stopFadeEffect();
-    popOverShell.setVisible(false);
     deactivateBubble();
-    super.dispose();
+    if (!popOverShell.isDisposed()) {
+      popOverShell.setVisible(false);
+      super.dispose();
+    }
   }
 
   /**
