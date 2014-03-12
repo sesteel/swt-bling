@@ -4,7 +4,9 @@ import com.readytalk.swt.effects.FadeEffect;
 import com.readytalk.swt.effects.FadeEffect.Fadeable;
 import com.readytalk.swt.effects.InvalidEffectArgumentException;
 import com.readytalk.swt.helpers.AncestryHelper;
+import com.readytalk.swt.helpers.WidgetHelper;
 import com.readytalk.swt.util.ColorFactory;
+import com.readytalk.swt.util.DisplaySafe;
 import com.readytalk.swt.widgets.CustomElementDataProvider;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
@@ -14,6 +16,7 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.graphics.Region;
 import org.eclipse.swt.layout.FillLayout;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Shell;
@@ -42,7 +45,7 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   private Object fadeLock = new Object();
   private FadeEffect fadeEffect;
 
-  protected Control parentControl;
+  protected final Control parentControl;
   protected Shell popOverShell;
 
   private Shell parentShell;
@@ -57,6 +60,8 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   private boolean positionRelativeParent = false;
   private boolean fadeEffectInProgress = false;
 
+  private DisplaySafe displaySafe;
+
   /**
    * Provides the backbone for Custom Widgets that need a <code>Shell</code> popped over a <code>Control</code> or
    * <code>CustomElementDataProvider</code>. If you're using a <code>CustomElementDataProvider</code>, pass the
@@ -69,6 +74,8 @@ public abstract class PopOverShell extends Widget implements Fadeable {
    */
   public PopOverShell(Control parentControl, CustomElementDataProvider customElementDataProvider) {
     super(parentControl, SWT.NONE);
+
+    displaySafe = new DisplaySafe();
 
     if (customElementDataProvider != null) {
       poppedOverItem = new PoppedOverItem(customElementDataProvider);
@@ -205,13 +212,23 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   }
 
   private Point getPopOverShellLocation(Shell parentShell, PoppedOverItem poppedOverItem, Region popOverRegion) {
-    Rectangle displayBounds = parentShell.getDisplay().getBounds();
+
+    Point location;
+    Rectangle displayBounds = null;
+
+    try {
+      Display display = displaySafe.getLatestDisplay();
+      displayBounds = display.getBounds();
+    } catch (DisplaySafe.NullDisplayException nde) {
+      LOG.warning("Could not find display");
+    }
+
     Rectangle popOverBounds = popOverRegion.getBounds();
     Point poppedOverItemLocationRelativeToDisplay =
             getPoppedOverItemRelativeLocation(poppedOverItem);
 
     // Guess on the location first
-    Point location = getPopOverDisplayPoint(popOverBounds, poppedOverItem, poppedOverItemLocationRelativeToDisplay,
+    location = getPopOverDisplayPoint(popOverBounds, poppedOverItem, poppedOverItemLocationRelativeToDisplay,
             popOverEdgeCenteredOnParent, popOverAboveOrBelowParent);
 
     // Adjust as needed
@@ -256,7 +273,7 @@ public abstract class PopOverShell extends Widget implements Fadeable {
     boolean isBottomCutOff = false;
     int lowestYPosition = locationRelativeToDisplay.y + popOverBounds.height;
 
-    if (!displayBounds.contains(new Point(0, lowestYPosition))) {
+    if (displayBounds != null && !displayBounds.contains(new Point(0, lowestYPosition))) {
       isBottomCutOff = true;
     }
 
@@ -272,7 +289,7 @@ public abstract class PopOverShell extends Widget implements Fadeable {
     boolean isRightCutOff = false;
     int farthestXPosition = locationRelativeToDisplay.x + popOverBounds.width;
 
-    if (!displayBounds.contains(new Point(farthestXPosition, 0))) {
+    if (displayBounds != null && !displayBounds.contains(new Point(farthestXPosition, 0))) {
       popOverEdgeCenteredOnParent = CenteringEdge.RIGHT;
       isRightCutOff = true;
     }
@@ -299,7 +316,16 @@ public abstract class PopOverShell extends Widget implements Fadeable {
   Point getPoppedOverItemRelativeLocation(PoppedOverItem poppedOverItem) {
     Point location = null;
     if (positionRelativeParent == false) {
-      location = parentControl.getDisplay().map(parentShell, null, poppedOverItem.getLocation());
+      Display display = null;
+      try {
+        display = displaySafe.getLatestDisplay();
+      } catch (DisplaySafe.NullDisplayException nde) {
+        LOG.warning("Could not find active display.");
+      }
+
+      if(display != null) {
+        location = display.map(parentShell, null, poppedOverItem.getLocation());
+      }
     } else {
       location = parentControl.toDisplay(poppedOverItem.getLocation());
     }
@@ -377,7 +403,7 @@ public abstract class PopOverShell extends Widget implements Fadeable {
    */
   public boolean isVisible() {
     boolean isVisible = false;
-    if (popOverShell != null && !popOverShell.isDisposed()){
+    if (WidgetHelper.isWidgetSafe(popOverShell)){
       isVisible = popOverShell.isVisible();
     }
     return isVisible;
